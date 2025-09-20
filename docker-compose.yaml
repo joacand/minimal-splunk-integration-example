@@ -1,0 +1,65 @@
+networks:
+  myCommonNetwork:
+    driver: bridge
+    attachable: true
+
+services:
+  minimal-otel-app:
+    networks:
+      myCommonNetwork:
+        aliases:
+          - minimal-otel-app
+    image: minimal-otel-app
+    volumes:
+    - ./log/minimal-otel-app:/log/minimal-otel-app
+    build:
+      context: ./minimal-otel-app
+      dockerfile: Dockerfile
+    environment: 
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://splunk-collector:4317"
+      OTEL_SERVICE_NAME: "minimal-otel-app"
+      OTEL_LOG_LEVEL: "debug"
+      OTEL_DOTNET_AUTO_LOG_DIRECTORY: "/log/minimal-otel-app"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "Grpc"
+    depends_on:
+    - splunk-collector
+    ports: 
+      - "32001:8080"
+  
+  splunk:
+    networks:
+      myCommonNetwork:
+        aliases:
+          - splunk
+    image: splunk/splunk:latest
+    restart: always
+    ports:
+      - "8000:8000"
+      - "8088:8088"
+    hostname: so1
+    environment:
+      SPLUNK_GENERAL_TERMS: "--accept-sgt-current-at-splunk-com"
+      SPLUNK_START_ARGS: "--accept-license"
+      SPLUNK_PASSWORD: "splunk12345"
+  
+  splunk-collector:
+    networks:
+      myCommonNetwork:
+        aliases:
+          - splunk-collector
+    image: quay.io/signalfx/splunk-otel-collector:0.103.0
+    restart: always
+    ports:
+      - "4318:4318" # OTLP HTTP
+      - "4317:4317" # OTLP gRPC
+      - "8888:8888" # Health check
+      - "13133:13133" # Debug endpoint
+    volumes:
+    - ./log/collector:/log/otel
+    - ./relay.yaml:/conf/relay.yaml
+    command: ["otelcol","--config=/conf/relay.yaml"]
+    environment: 
+      SPLUNK_MEMORY_TOTAL_MIB: "200"
+      SPLUNK_OBSERVABILITY_ACCESS_TOKEN: "YOUR-TOKEN-GOES-HERE"
+    depends_on:
+    - splunk
